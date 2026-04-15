@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>MediSafe AI+</title>
+<style>
+body {
+    font-family: Arial;
+    background: #f5f7fa;
+    padding: 20px;
+}
+h1 { text-align: center; }
+
+.card {
+    background: white;
+    padding: 15px;
+    border-radius: 15px;
+    margin: 10px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+}
+
+button {
+    padding: 10px;
+    border: none;
+    background: #4CAF50;
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+input, select {
+    padding: 8px;
+    margin: 5px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>💊 MediSafe AI+</h1>
+
+<h3>🌐 Language</h3>
+<select id="lang">
+    <option value="en">English</option>
+    <option value="ta">Tamil</option>
+    <option value="hi">Hindi</option>
+</select>
+
+<h3>Add Medicine</h3>
+
+<input id="name" placeholder="Medicine Name">
+<select id="type">
+    <option>Pill 💊</option>
+    <option>Syrup 🧴</option>
+    <option>Injection 💉</option>
+</select>
+
+<select id="priority">
+    <option>Normal</option>
+    <option>Critical ⚠️</option>
+</select>
+
+<button onclick="addMedicine()">Add</button>
+
+<h3>Medicine List</h3>
+<div id="list"></div>
+
+<h3>Drug Interaction</h3>
+<button onclick="checkInteraction()">Check</button>
+<p id="interaction"></p>
+
+<h3>Reminder</h3>
+<button onclick="startReminder()">Start Reminder</button>
+
+<h3>📊 Weekly Report</h3>
+<button onclick="showReport()">View Report</button>
+<p id="report"></p>
+
+<h3>Symptom Assistant</h3>
+<input id="symptom" placeholder="Enter symptom">
+<button onclick="getAdvice()">Get Advice</button>
+<p id="advice"></p>
+
+<script>
+
+// ✅ LOAD SAVED DATA
+let medicines = JSON.parse(localStorage.getItem("meds")) || [];
+
+// 🌐 Language
+function getLangText(key) {
+    let lang = document.getElementById("lang").value;
+
+    let texts = {
+        en: { reminder: "It's time to take your medicine", safe: "Safe" },
+        ta: { reminder: "உங்கள் மருந்தை எடுத்துக்கொள்ளும் நேரம்", safe: "பாதுகாப்பானது" },
+        hi: { reminder: "आपकी दवा लेने का समय है", safe: "सुरक्षित" }
+    };
+
+    return texts[lang][key];
+}
+
+// 🧠 Food suggestion
+function foodSuggestion(name) {
+    name = name.toLowerCase();
+    if (name.includes("antibiotic")) return "❌ Avoid milk 🥛";
+    if (name.includes("paracetamol")) return "✅ Take after food 🍽️";
+    if (name.includes("ibuprofen")) return "⚠️ Take with food";
+    return "ℹ️ No restriction";
+}
+
+// ➕ Add medicine + SAVE
+function addMedicine() {
+    let name = document.getElementById("name").value;
+    let type = document.getElementById("type").value;
+    let priority = document.getElementById("priority").value;
+
+    let med = {
+        name,
+        type,
+        priority,
+        food: foodSuggestion(name),
+        date: new Date().toISOString()
+    };
+
+    medicines.push(med);
+
+    // SAVE TO STORAGE
+    localStorage.setItem("meds", JSON.stringify(medicines));
+
+    display();
+}
+
+// 📋 Display
+function display() {
+    let list = document.getElementById("list");
+    list.innerHTML = "";
+
+    medicines.forEach(m => {
+        list.innerHTML += `
+        <div class="card">
+            <b>💊 ${m.name}</b><br>
+            Type: ${m.type}<br>
+            Priority: ${m.priority}<br>
+            ${m.food}
+        </div>`;
+    });
+}
+
+// 🧠 Category detection
+function getCategory(name) {
+    name = name.toLowerCase();
+
+    if (name.includes("paracetamol")) return "safe_painkiller";
+    if (name.includes("ibuprofen") || name.includes("aspirin")) return "nsaid";
+    if (name.includes("antibiotic") || name.includes("amoxicillin")) return "antibiotic";
+    if (name.includes("cough") || name.includes("syrup")) return "cough";
+
+    return "unknown";
+}
+
+// ⚠️ Interaction
+function checkInteraction() {
+    let categories = medicines.map(m => getCategory(m.name));
+    let msg = getLangText("safe");
+
+    let nsaidCount = categories.filter(c => c === "nsaid").length;
+
+    if (nsaidCount > 1) {
+        msg = "⚠️ Multiple painkillers may cause issues";
+    } else if (categories.includes("antibiotic") && categories.includes("cough")) {
+        msg = "⚠️ Some combinations may interact";
+    } else if (categories.includes("unknown") && medicines.length > 1) {
+        msg = "⚠️ Unknown combination — consult doctor";
+    }
+
+    document.getElementById("interaction").innerText = msg;
+}
+
+// ⏰ Reminder
+function startReminder() {
+    medicines.forEach(m => {
+        let delay = m.priority === "Critical ⚠️" ? 5000 : 10000;
+
+        setTimeout(() => {
+            let text = getLangText("reminder");
+            alert("⏰ " + text);
+            speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        }, delay);
+    });
+}
+
+// 📊 WEEKLY REPORT
+function showReport() {
+    let now = new Date();
+    let weekAgo = new Date();
+    weekAgo.setDate(now.getDate() - 7);
+
+    let weeklyMeds = medicines.filter(m => new Date(m.date) >= weekAgo);
+
+    let total = weeklyMeds.length;
+    let critical = weeklyMeds.filter(m => m.priority.includes("Critical")).length;
+    let pills = weeklyMeds.filter(m => m.type.includes("Pill")).length;
+    let syrups = weeklyMeds.filter(m => m.type.includes("Syrup")).length;
+
+    let msg = `
+📊 Weekly Report:
+Total Medicines: ${total}
+Critical: ${critical}
+Pills: ${pills}
+Syrups: ${syrups}
+    `;
+
+    document.getElementById("report").innerText = msg;
+}
+
+// 🤖 Chatbot
+function getAdvice() {
+    let s = document.getElementById("symptom").value.toLowerCase();
+    let msg = "Consult doctor";
+
+    if (s.includes("fever")) msg = "Take paracetamol";
+    else if (s.includes("cough")) msg = "Use syrup";
+    else if (s.includes("headache")) msg = "Drink water and rest";
+
+    document.getElementById("advice").innerText = msg;
+}
+
+// LOAD DATA ON START
+display();
+
+</script>
+
+</body>
+</html>
