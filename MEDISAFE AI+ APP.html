@@ -2,12 +2,19 @@
 <html>
 <head>
 <title>MediSafe AI+</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+<!-- 📊 CHART LIBRARY -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
 body {
     font-family: Arial;
     background: #f5f7fa;
     padding: 20px;
 }
+
 h1 { text-align: center; }
 
 .card {
@@ -45,9 +52,14 @@ input, select {
     <option value="hi">Hindi</option>
 </select>
 
+<!-- ================= MEDICINE ================= -->
 <h3>Add Medicine</h3>
 
 <input id="name" placeholder="Medicine Name">
+<input id="stock" placeholder="Stock (e.g. 10)">
+<input id="dose" placeholder="Dose per use (e.g. 1)">
+<input id="threshold" placeholder="Low stock alert (e.g. 3)">
+
 <select id="type">
     <option>Pill 💊</option>
     <option>Syrup 🧴</option>
@@ -55,176 +67,198 @@ input, select {
 </select>
 
 <select id="priority">
-    <option>Normal</option>
-    <option>Critical ⚠️</option>
+    <option value="normal">Normal</option>
+    <option value="critical">Critical ⚠️</option>
 </select>
 
 <button onclick="addMedicine()">Add</button>
 
+<!-- ================= OCR ================= -->
+<h3>📷 Prescription Scanner</h3>
+<input type="file" id="imageInput">
+<button onclick="scanPrescription()">Scan</button>
+<p id="ocrResult"></p>
+
+<!-- ================= SYMPTOM TRACKER (NEW) ================= -->
+<h3>📊 Symptom Tracker</h3>
+
+<input id="symptomInput" placeholder="Enter symptom (fever, headache...)">
+<button onclick="logSymptom()">Log Symptom</button>
+<button onclick="showGraph()">Show Trend</button>
+
+<canvas id="symptomChart" width="400" height="200"></canvas>
+
+<!-- ================= LIST ================= -->
 <h3>Medicine List</h3>
 <div id="list"></div>
 
-<h3>Drug Interaction</h3>
+<h3>Interaction</h3>
 <button onclick="checkInteraction()">Check</button>
 <p id="interaction"></p>
 
 <h3>Reminder</h3>
 <button onclick="startReminder()">Start Reminder</button>
 
-<h3>📊 Weekly Report</h3>
+<h3>Report</h3>
 <button onclick="showReport()">View Report</button>
 <p id="report"></p>
 
-<h3>Symptom Assistant</h3>
+<h3>Advice</h3>
 <input id="symptom" placeholder="Enter symptom">
 <button onclick="getAdvice()">Get Advice</button>
 <p id="advice"></p>
 
 <script>
 
-// ✅ LOAD SAVED DATA
+// ================= DATA =================
 let medicines = JSON.parse(localStorage.getItem("meds")) || [];
+let symptoms = JSON.parse(localStorage.getItem("symptoms")) || [];
+let chart;
 
-// 🌐 Language
-function getLangText(key) {
-    let lang = document.getElementById("lang").value;
+// ================= SYMPTOM SCORE SYSTEM =================
+function symptomScore(symptom) {
+    symptom = symptom.toLowerCase();
 
-    let texts = {
-        en: { reminder: "It's time to take your medicine", safe: "Safe" },
-        ta: { reminder: "உங்கள் மருந்தை எடுத்துக்கொள்ளும் நேரம்", safe: "பாதுகாப்பானது" },
-        hi: { reminder: "आपकी दवा लेने का समय है", safe: "सुरक्षित" }
+    if (symptom.includes("fever")) return 8;
+    if (symptom.includes("headache")) return 6;
+    if (symptom.includes("cough")) return 5;
+    if (symptom.includes("cold")) return 4;
+    if (symptom.includes("good")) return 2;
+
+    return 3;
+}
+
+// ================= LOG SYMPTOM =================
+function logSymptom() {
+    let s = document.getElementById("symptomInput").value;
+    if (!s) return;
+
+    let entry = {
+        text: s,
+        score: symptomScore(s),
+        date: new Date().toLocaleDateString()
     };
 
-    return texts[lang][key];
+    symptoms.push(entry);
+    localStorage.setItem("symptoms", JSON.stringify(symptoms));
+
+    alert("Symptom saved!");
 }
 
-// 🧠 Food suggestion
-function foodSuggestion(name) {
-    name = name.toLowerCase();
-    if (name.includes("antibiotic")) return "❌ Avoid milk 🥛";
-    if (name.includes("paracetamol")) return "✅ Take after food 🍽️";
-    if (name.includes("ibuprofen")) return "⚠️ Take with food";
-    return "ℹ️ No restriction";
+// ================= GRAPH =================
+function showGraph() {
+    let ctx = document.getElementById("symptomChart").getContext("2d");
+
+    let labels = symptoms.map(s => s.date);
+    let data = symptoms.map(s => s.score);
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: [{
+                label: "Symptom Trend",
+                data: data,
+                borderColor: "blue",
+                fill: false
+            }]
+        }
+    });
 }
 
-// ➕ Add medicine + SAVE
+// ================= OCR =================
+function scanPrescription() {
+    let file = document.getElementById("imageInput").files[0];
+
+    if (!file) return alert("Upload image");
+
+    Tesseract.recognize(file, 'eng').then(({ data: { text } }) => {
+        let meds = ["paracetamol", "ibuprofen", "amoxicillin", "aspirin"];
+
+        let found = "Unknown Medicine";
+
+        for (let m of meds) {
+            if (text.toLowerCase().includes(m)) {
+                found = m;
+            }
+        }
+
+        document.getElementById("name").value = found;
+        document.getElementById("ocrResult").innerText = "Detected: " + found;
+    });
+}
+
+// ================= MEDICINE =================
 function addMedicine() {
     let name = document.getElementById("name").value;
+    let stock = parseInt(document.getElementById("stock").value);
+    let dose = parseInt(document.getElementById("dose").value);
+    let threshold = parseInt(document.getElementById("threshold").value);
     let type = document.getElementById("type").value;
     let priority = document.getElementById("priority").value;
 
-    let med = {
-        name,
-        type,
-        priority,
-        food: foodSuggestion(name),
-        date: new Date().toISOString()
-    };
+    medicines.push({ name, stock, dose, threshold, type, priority });
 
-    medicines.push(med);
-
-    // SAVE TO STORAGE
     localStorage.setItem("meds", JSON.stringify(medicines));
-
     display();
 }
 
-// 📋 Display
+function takeMedicine(i) {
+    medicines[i].stock -= medicines[i].dose;
+
+    if (medicines[i].stock <= medicines[i].threshold) {
+        alert("⚠️ Low stock");
+    }
+
+    localStorage.setItem("meds", JSON.stringify(medicines));
+    display();
+}
+
 function display() {
     let list = document.getElementById("list");
     list.innerHTML = "";
 
-    medicines.forEach(m => {
+    medicines.forEach((m, i) => {
         list.innerHTML += `
         <div class="card">
-            <b>💊 ${m.name}</b><br>
-            Type: ${m.type}<br>
-            Priority: ${m.priority}<br>
-            ${m.food}
+            <b>${m.name}</b><br>
+            Stock: ${m.stock}<br>
+            <button onclick="takeMedicine(${i})">Taken</button>
         </div>`;
     });
 }
 
-// 🧠 Category detection
-function getCategory(name) {
-    name = name.toLowerCase();
-
-    if (name.includes("paracetamol")) return "safe_painkiller";
-    if (name.includes("ibuprofen") || name.includes("aspirin")) return "nsaid";
-    if (name.includes("antibiotic") || name.includes("amoxicillin")) return "antibiotic";
-    if (name.includes("cough") || name.includes("syrup")) return "cough";
-
-    return "unknown";
-}
-
-// ⚠️ Interaction
+// ================= INTERACTION =================
 function checkInteraction() {
-    let categories = medicines.map(m => getCategory(m.name));
-    let msg = getLangText("safe");
-
-    let nsaidCount = categories.filter(c => c === "nsaid").length;
-
-    if (nsaidCount > 1) {
-        msg = "⚠️ Multiple painkillers may cause issues";
-    } else if (categories.includes("antibiotic") && categories.includes("cough")) {
-        msg = "⚠️ Some combinations may interact";
-    } else if (categories.includes("unknown") && medicines.length > 1) {
-        msg = "⚠️ Unknown combination — consult doctor";
-    }
-
+    let msg = "Safe";
     document.getElementById("interaction").innerText = msg;
 }
 
-// ⏰ Reminder
+// ================= REMINDER =================
 function startReminder() {
-    medicines.forEach(m => {
-        let delay = m.priority === "Critical ⚠️" ? 5000 : 10000;
-
-        setTimeout(() => {
-            let text = getLangText("reminder");
-            alert("⏰ " + text);
-            speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-        }, delay);
-    });
+    alert("Reminder started!");
 }
 
-// 📊 WEEKLY REPORT
+// ================= REPORT =================
 function showReport() {
-    let now = new Date();
-    let weekAgo = new Date();
-    weekAgo.setDate(now.getDate() - 7);
-
-    let weeklyMeds = medicines.filter(m => new Date(m.date) >= weekAgo);
-
-    let total = weeklyMeds.length;
-    let critical = weeklyMeds.filter(m => m.priority.includes("Critical")).length;
-    let pills = weeklyMeds.filter(m => m.type.includes("Pill")).length;
-    let syrups = weeklyMeds.filter(m => m.type.includes("Syrup")).length;
-
-    let msg = `
-📊 Weekly Report:
-Total Medicines: ${total}
-Critical: ${critical}
-Pills: ${pills}
-Syrups: ${syrups}
-    `;
-
-    document.getElementById("report").innerText = msg;
+    document.getElementById("report").innerText =
+        "Total Medicines: " + medicines.length;
 }
 
-// 🤖 Chatbot
+// ================= ADVICE =================
 function getAdvice() {
-    let s = document.getElementById("symptom").value.toLowerCase();
-    let msg = "Consult doctor";
+    let s = document.getElementById("symptom").value;
 
+    let msg = "Consult doctor";
     if (s.includes("fever")) msg = "Take paracetamol";
-    else if (s.includes("cough")) msg = "Use syrup";
-    else if (s.includes("headache")) msg = "Drink water and rest";
+    if (s.includes("cough")) msg = "Use syrup";
 
     document.getElementById("advice").innerText = msg;
 }
 
-// LOAD DATA ON START
+// INIT
 display();
 
 </script>
